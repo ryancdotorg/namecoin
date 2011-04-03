@@ -24,6 +24,7 @@ extern int nBestHeight;
 extern int nConnectTimeout;
 
 
+extern unsigned short GetDefaultPort();
 
 inline unsigned int ReceiveBufferSize() { return 1000*GetArg("-maxreceivebuffer", 10*1000); }
 inline unsigned int SendBufferSize() { return 1000*GetArg("-maxsendbuffer", 10*1000); }

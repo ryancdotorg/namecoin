@@ -21,7 +21,6 @@ static const CBigNum bnFalse(0);
 static const CBigNum bnTrue(1);
 static const size_t nMaxNumSize = 4;
 
-
 CBigNum CastToBigNum(const valtype& vch)
 {
     if (vch.size() > nMaxNumSize)
@@ -1080,6 +1079,8 @@ bool Solver(const CKeyStore& keystore, const CScript& scriptPubKey, uint256 hash
 
 bool IsStandard(const CScript& scriptPubKey)
 {
+    if (hooks->IsStandard(scriptPubKey))
+        return true;
     vector<pair<opcodetype, valtype> > vSolution;
     return Solver(scriptPubKey, vSolution);
 }

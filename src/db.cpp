@@ -834,6 +834,7 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
                     vWalletUpgrade.push_back(hash);
                 }
 
+                hooks->AddToWallet(wtx);
                 //// debug print
                 //printf("LoadWallet  %s\n", wtx.GetHash().ToString().c_str());
                 //printf(" %12I64d  %s  %s  %s\n",

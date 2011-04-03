@@ -202,6 +202,7 @@ protected:
         return 0;
     }
 
+public:
     DbTxn* GetTxn()
     {
         if (!vTxn.empty())
@@ -210,7 +211,6 @@ protected:
             return NULL;
     }
 
-public:
     bool TxnBegin()
     {
         if (!pdb)

@@ -26,6 +26,7 @@ class CInv;
 class CRequestTracker;
 class CNode;
 class CBlockIndex;
+class CHooks;
 
 static const unsigned int MAX_BLOCK_SIZE = 1000000;
 static const unsigned int MAX_BLOCK_SIZE_GEN = MAX_BLOCK_SIZE/2;
@@ -635,7 +636,7 @@ public:
     bool ReadFromDisk(CTxDB& txdb, COutPoint prevout, CTxIndex& txindexRet);
     bool ReadFromDisk(CTxDB& txdb, COutPoint prevout);
     bool ReadFromDisk(COutPoint prevout);
-    bool DisconnectInputs(CTxDB& txdb);
+    bool DisconnectInputs(CTxDB& txdb, CBlockIndex* pindex);
     bool ConnectInputs(CTxDB& txdb, std::map<uint256, CTxIndex>& mapTestPool, CDiskTxPos posThisTx,
                        CBlockIndex* pindexBlock, int64& nFees, bool fBlock, bool fMiner, int64 nMinFee=0);
     bool ClientConnectInputs();
@@ -1565,5 +1566,18 @@ public:
 
     bool ProcessAlert();
 };
+
+
+
+
+
+
+
+
+extern std::map<uint256, CTransaction> mapTransactions;
+extern std::map<uint160, std::vector<unsigned char> > mapPubKeys;
+extern CCriticalSection cs_mapPubKeys;
+extern CHooks* hooks;
+
 
 #endif

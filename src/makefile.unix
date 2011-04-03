@@ -106,7 +106,7 @@ HEADERS = \
     util.h \
     wallet.h
 
-OBJS= \
+BASE_OBJS= \
     obj/crypter.o \
     obj/db.o \
     obj/init.o \
@@ -119,6 +119,11 @@ OBJS= \
     obj/script.o \
     obj/util.o \
     obj/wallet.o
+
+OBJS = \
+    $(BASE_OBJS) \
+    obj/hook.o
+
 
 
 all: bitcoind

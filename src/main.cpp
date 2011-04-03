@@ -65,6 +65,11 @@ int fUseUPnP = false;
 #endif
 
 
+CHooks* hooks;
+
+
+
+
 //////////////////////////////////////////////////////////////////////////////
 //
 // dispatching functions
@@ -345,7 +350,7 @@ bool CTransaction::CheckTransaction() const
                 return DoS(10, error("CTransaction::CheckTransaction() : prevout is null"));
     }
 
-    return true;
+    return hooks->CheckTransaction(*this);
 }
 
 bool CTransaction::AcceptToMemoryPool(CTxDB& txdb, bool fCheckInputs, bool* pfMissingInputs)
@@ -779,8 +784,11 @@ void static InvalidChainFound(CBlockIndex* pindexNew)
 
 
 
-bool CTransaction::DisconnectInputs(CTxDB& txdb)
+bool CTransaction::DisconnectInputs(CTxDB& txdb, CBlockIndex* pindex)
 {
+    if (!hooks->DisconnectInputs(txdb, *this, pindex))
+        return false;
+
     // Relinquish previous transactions' spent pointers
     if (!IsCoinBase())
     {
@@ -822,6 +830,9 @@ bool CTransaction::ConnectInputs(CTxDB& txdb, map<uint256, CTxIndex>& mapTestPoo
     // ... both are false when called from CTransaction::AcceptToMemoryPool
     if (!IsCoinBase())
     {
+        vector<CTransaction> vTxPrev;
+        vector<CTxIndex> vTxindex;
+
         int64 nValueIn = 0;
         for (int i = 0; i < vin.size(); i++)
         {
@@ -900,7 +911,13 @@ bool CTransaction::ConnectInputs(CTxDB& txdb, map<uint256, CTxIndex>& mapTestPoo
             {
                 mapTestPool[prevout.hash] = txindex;
             }
+
+            vTxPrev.push_back(txPrev);
+            vTxindex.push_back(txindex);
         }
+
+        if (!hooks->ConnectInputs(txdb, *this, vTxPrev, vTxindex, pindexBlock, posThisTx, fBlock, fMiner))
+            return false;
 
         if (nValueIn < GetValueOut())
             return DoS(100, error("ConnectInputs() : %s value in < value out", GetHash().ToString().substr(0,10).c_str()));
@@ -981,9 +998,12 @@ bool CTransaction::ClientConnectInputs()
 
 bool CBlock::DisconnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 {
+    if (!hooks->DisconnectBlock(*this, txdb, pindex))
+        return false;
+
     // Disconnect in reverse order
     for (int i = vtx.size()-1; i >= 0; i--)
-        if (!vtx[i].DisconnectInputs(txdb))
+        if (!vtx[i].DisconnectInputs(txdb, pindex))
             return false;
 
     // Update block index on disk without changing it in memory.
@@ -1042,7 +1062,7 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     BOOST_FOREACH(CTransaction& tx, vtx)
         SyncWithWallets(tx, this, true);
 
-    return true;
+    return hooks->ConnectBlock(*this, txdb, pindex);
 }
 
 bool static Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
@@ -1316,6 +1336,8 @@ bool CBlock::AcceptBlock()
         if (!tx.IsFinal(nHeight, GetBlockTime()))
             return DoS(10, error("AcceptBlock() : contains a non-final transaction"));
 
+    /* TODO: Namecoin checkpoints are different from bitcoin, update this
+
     // Check that the block chain matches the known block chain up to a checkpoint
     if (!fTestNet)
         if ((nHeight ==  11111 && hash != uint256("0x0000000069e244f73d78e8fd29ba2fd2ed618bd6fa2ee92559f542fdb26e7c1d")) ||
@@ -1328,6 +1350,10 @@ bool CBlock::AcceptBlock()
             (nHeight == 134444 && hash != uint256("0x00000000000005b12ffd4cd315cd34ffd4a594f430ac814c91184a0d42d2b0fe")) ||
             (nHeight == 140700 && hash != uint256("0x000000000000033b512028abb90e1626d8b346fd0ed598ac0a3c371138dce2bd")))
             return DoS(100, error("AcceptBlock() : rejected by checkpoint lockin at %d", nHeight));
+    */
+
+    if (!hooks->Lockin(nHeight, hash))
+        return error("AcceptBlock() : rejected by checkpoint lockin at %d", nHeight);
 
     // Write block to history file
     if (!CheckDiskSpace(::GetSerializeSize(*this, SER_DISK)))
@@ -1481,6 +1507,8 @@ bool LoadBlockIndex(bool fAllowNew)
         pchMessageStart[3] = 0xda;
     }
 
+    hooks->MessageStart(pchMessageStart);
+
     //
     // Load block index
     //
@@ -1528,13 +1556,16 @@ bool LoadBlockIndex(bool fAllowNew)
             block.nNonce   = 384568319;
         }
 
-        //// debug print
-        printf("%s\n", block.GetHash().ToString().c_str());
-        printf("%s\n", hashGenesisBlock.ToString().c_str());
-        printf("%s\n", block.hashMerkleRoot.ToString().c_str());
-        assert(block.hashMerkleRoot == uint256("0x4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
-        block.print();
-        assert(block.GetHash() == hashGenesisBlock);
+        if (!hooks->GenesisBlock(block))
+        {
+            //// debug print
+            printf("%s\n", block.GetHash().ToString().c_str());
+            printf("%s\n", hashGenesisBlock.ToString().c_str());
+            printf("%s\n", block.hashMerkleRoot.ToString().c_str());
+            assert(block.hashMerkleRoot == uint256("0x4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+            block.print();
+            assert(block.GetHash() == hashGenesisBlock);
+        }
 
         // Start new block file
         unsigned int nFile;
