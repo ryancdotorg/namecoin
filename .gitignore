@@ -1,6 +1,8 @@
 src/*.exe
 src/bitcoin
 src/bitcoind
+src/namecoin
+src/namecoind
 .*.swp
 *.*~*
 *.bak

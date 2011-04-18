@@ -124,9 +124,7 @@ OBJS = \
     $(BASE_OBJS) \
     obj/hook.o
 
-
-
-all: bitcoind
+all: namecoind
 
 # auto-generated dependencies:
 -include obj/nogui/*.P
@@ -151,6 +149,11 @@ obj/test/%.o: test/%.cpp
 
 test_bitcoin: obj/test/test_bitcoin.o $(filter-out obj/nogui/init.o,$(OBJS:obj/%=obj/nogui/%))
 	$(CXX) $(xCXXFLAGS) -o $@ $(LIBPATHS) $^ -Wl,-Bstatic -lboost_unit_test_framework $(LDFLAGS) $(LIBS)
+
+obj/nogui/namecoin.o: namecoin.h
+
+namecoind: $(BASE_OBJS:obj/%=obj/nogui/%) obj/nogui/namecoin.o obj/sha256.o
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS)
 
 clean:
 	-rm -f bitcoind test_bitcoin
