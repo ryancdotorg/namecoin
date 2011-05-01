@@ -472,6 +472,8 @@ bool CTransaction::AcceptToMemoryPool(CTxDB& txdb, bool fCheckInputs, bool* pfMi
         AddToMemoryPoolUnchecked();
     }
 
+    hooks->AcceptToMemoryPool(txdb, *this);
+
     ///// are we sure this is ok when loading transactions or restoring block txes
     // If updated, erase old tx from wallet
     if (ptxOld)
