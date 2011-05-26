@@ -731,14 +731,7 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits)
 // Return conservative estimate of total number of blocks, 0 if unknown
 int GetTotalBlocksEstimate()
 {
-    if(fTestNet)
-    {
-        return 0;
-    }
-    else
-    {
-        return nTotalBlocksEstimate;
-    }
+    return hooks->LockinHeight();
 }
 
 // Return maximum amount of blocks that other nodes claim to have
@@ -1371,7 +1364,7 @@ bool CBlock::AcceptBlock()
     if (hashBestChain == hash)
         CRITICAL_BLOCK(cs_vNodes)
             BOOST_FOREACH(CNode* pnode, vNodes)
-                if (nBestHeight > (pnode->nStartingHeight != -1 ? pnode->nStartingHeight - 2000 : 140700))
+                if (nBestHeight > (pnode->nStartingHeight != -1 ? pnode->nStartingHeight - 2000 : hooks->LockinHeight()))
                     pnode->PushInventory(CInv(MSG_BLOCK, hash));
 
     return true;
