@@ -12,6 +12,7 @@
 #include "db.h"
 
 #include <list>
+#include <boost/shared_ptr.hpp>
 
 class CBlock;
 class CBlockIndex;
@@ -27,6 +28,8 @@ class CRequestTracker;
 class CNode;
 class CBlockIndex;
 class CHooks;
+
+class CAuxPow;
 
 static const unsigned int MAX_BLOCK_SIZE = 1000000;
 static const unsigned int MAX_BLOCK_SIZE_GEN = MAX_BLOCK_SIZE/2;
@@ -96,7 +99,8 @@ bool ProcessMessages(CNode* pfrom);
 bool SendMessages(CNode* pto, bool fSendTrickle);
 void GenerateBitcoins(bool fGenerate, CWallet* pwallet);
 CBlock* CreateNewBlock(CReserveKey& reservekey);
-void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& nExtraNonce);
+void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& nExtraNonce, int64& nPrevTime);
+void IncrementExtraNonceWithAux(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& nExtraNonce, int64& nPrevTime, std::vector<unsigned char>& vchAux);
 void FormatHashBuffers(CBlock* pblock, char* pmidstate, char* pdata, char* phash1);
 bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey);
 bool CheckProofOfWork(uint256 hash, unsigned int nBits);
@@ -762,7 +766,23 @@ public:
 };
 
 
+template <typename Stream>
+int ReadWriteAuxPow(Stream& s, const boost::shared_ptr<CAuxPow>& auxpow, int nType, int nVersion, CSerActionSerialize ser_action);
 
+template <typename Stream>
+int ReadWriteAuxPow(Stream& s, boost::shared_ptr<CAuxPow>& auxpow, int nType, int nVersion, CSerActionUnserialize ser_action);
+
+template <typename Stream>
+int ReadWriteAuxPow(Stream& s, const boost::shared_ptr<CAuxPow>& auxpow, int nType, int nVersion, CSerActionGetSerializeSize ser_action);
+
+enum
+{
+    // primary version
+    BLOCK_VERSION_DEFAULT        = (1 << 0),
+
+    // modifiers
+    BLOCK_VERSION_AUXPOW         = (1 << 16),
+};
 
 
 //
@@ -790,6 +810,9 @@ public:
     // network and disk
     std::vector<CTransaction> vtx;
 
+    // header
+    boost::shared_ptr<CAuxPow> auxpow;
+
     // memory only
     mutable std::vector<uint256> vMerkleTree;
 
@@ -812,16 +835,20 @@ public:
         READWRITE(nBits);
         READWRITE(nNonce);
 
+        nSerSize += ReadWriteAuxPow(s, auxpow, nType, nVersion, ser_action);
+
         // ConnectBlock depends on vtx being last so it can calculate offset
-        if (!(nType & (SER_GETHASH|SER_BLOCKHEADERONLY)))
+        if (!(nType & SER_BLOCKHEADERONLY))
             READWRITE(vtx);
         else if (fRead)
             const_cast<CBlock*>(this)->vtx.clear();
     )
 
+    void SetAuxPow(CAuxPow* pow);
+
     void SetNull()
     {
-        nVersion = 1;
+        nVersion = BLOCK_VERSION_DEFAULT;
         hashPrevBlock = 0;
         hashMerkleRoot = 0;
         nTime = 0;
@@ -830,6 +857,7 @@ public:
         vtx.clear();
         vMerkleTree.clear();
         nDoS = 0;
+        auxpow.reset();
     }
 
     bool IsNull() const
@@ -938,6 +966,8 @@ public:
         return true;
     }
 
+    bool CheckProofOfWork(int nHeight) const;
+
     bool ReadFromDisk(unsigned int nFile, unsigned int nBlockPos, bool fReadTransactions=true)
     {
         SetNull();
@@ -953,7 +983,7 @@ public:
         filein >> *this;
 
         // Check the header
-        if (!CheckProofOfWork(GetHash(), nBits))
+        if (!CheckProofOfWork(INT_MAX))
             return error("CBlock::ReadFromDisk() : errors in block header");
 
         return true;
@@ -978,6 +1008,7 @@ public:
         printf("  vMerkleTree: ");
         for (int i = 0; i < vMerkleTree.size(); i++)
             printf("%s ", vMerkleTree[i].ToString().substr(0,10).c_str());
+
         printf("\n");
     }
 
@@ -987,7 +1018,7 @@ public:
     bool ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions=true);
     bool SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew);
     bool AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos);
-    bool CheckBlock() const;
+    bool CheckBlock(int nHeight) const;
     bool AcceptBlock();
 };
 
@@ -1022,6 +1053,9 @@ public:
     unsigned int nBits;
     unsigned int nNonce;
 
+    // if this is an aux work block
+    boost::shared_ptr<CAuxPow> auxpow;
+
 
     CBlockIndex()
     {
@@ -1038,6 +1072,7 @@ public:
         nTime          = 0;
         nBits          = 0;
         nNonce         = 0;
+        auxpow.reset();
     }
 
     CBlockIndex(unsigned int nFileIn, unsigned int nBlockPosIn, CBlock& block)
@@ -1055,6 +1090,7 @@ public:
         nTime          = block.nTime;
         nBits          = block.nBits;
         nNonce         = block.nNonce;
+        auxpow         = block.auxpow;
     }
 
     CBlock GetBlockHeader() const
@@ -1067,6 +1103,7 @@ public:
         block.nTime          = nTime;
         block.nBits          = nBits;
         block.nNonce         = nNonce;
+        block.auxpow         = auxpow;
         return block;
     }
 
@@ -1094,10 +1131,7 @@ public:
         return (pnext || this == pindexBest);
     }
 
-    bool CheckIndex() const
-    {
-        return CheckProofOfWork(GetBlockHash(), nBits);
-    }
+    bool CheckIndex() const;
 
     bool EraseBlockFromDisk()
     {
@@ -1144,13 +1178,7 @@ public:
 
 
 
-    std::string ToString() const
-    {
-        return strprintf("CBlockIndex(nprev=%08x, pnext=%08x, nFile=%d, nBlockPos=%-6d nHeight=%d, merkle=%s, hashBlock=%s)",
-            pprev, pnext, nFile, nBlockPos, nHeight,
-            hashMerkleRoot.ToString().substr(0,10).c_str(),
-            GetBlockHash().ToString().substr(0,20).c_str());
-    }
+    std::string ToString() const;
 
     void print() const
     {
@@ -1198,6 +1226,8 @@ public:
         READWRITE(nTime);
         READWRITE(nBits);
         READWRITE(nNonce);
+
+        ReadWriteAuxPow(s, auxpow, nType, this->nVersion, ser_action);
     )
 
     uint256 GetBlockHash() const

@@ -6,6 +6,8 @@
 #include "db.h"
 #include "net.h"
 #include "init.h"
+#include "auxpow.h"
+#include "cryptopp/sha.h"
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 
@@ -648,6 +650,14 @@ bool CBlock::ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions)
     return true;
 }
 
+void CBlock::SetAuxPow(CAuxPow* pow)
+{
+    nVersion = BLOCK_VERSION_DEFAULT;
+    if (pow != NULL)
+        nVersion |=  BLOCK_VERSION_AUXPOW;
+    auxpow.reset(pow);
+}
+
 uint256 static GetOrphanRoot(const CBlock* pblock)
 {
     // Work back to the first block in the orphan chain
@@ -1017,11 +1027,11 @@ bool CBlock::DisconnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 {
     // Check it again in case a previous version let a bad block in
-    if (!CheckBlock())
+    if (!CheckBlock(pindex->nHeight))
         return false;
 
     //// issue here: it doesn't know the version
-    unsigned int nTxPos = pindex->nBlockPos + ::GetSerializeSize(CBlock(), SER_DISK) - 1 + GetSizeOfCompactSize(vtx.size());
+    unsigned int nTxPos = pindex->nBlockPos + ::GetSerializeSize(*this, SER_DISK|SER_BLOCKHEADERONLY) + GetSizeOfCompactSize(vtx.size());
 
     map<uint256, CTxIndex> mapQueuedChanges;
     int64 nFees = 0;
@@ -1262,9 +1272,41 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
 }
 
 
+// Start accepting AUX POW at this block
+// 
+// Even if we do not accept AUX POW ourselves, we can always be the parent chain.
+
+int GetAuxPowStartBlock()
+{
+    if (fTestNet)
+        return 0; // Always on testnet
+    else
+        return INT_MAX; // Never on prodnet
+}
 
 
-bool CBlock::CheckBlock() const
+bool CBlock::CheckProofOfWork(int nHeight) const
+{
+
+    if (auxpow.get() != NULL && nHeight >= GetAuxPowStartBlock())
+    {
+        if (!auxpow->Check(GetHash()))
+            return error("CheckProofOfWork() : AUX POW is not valid");
+        // Check proof of work matches claimed amount
+        if (!::CheckProofOfWork(auxpow->GetParentBlockHash(), nBits))
+            return error("CheckProofOfWork() : AUX proof of work failed");
+    }
+    else
+    {
+        // Check proof of work matches claimed amount
+        if (!::CheckProofOfWork(GetHash(), nBits))
+            return error("CheckProofOfWork() : proof of work failed");
+    }
+    return true;
+}
+
+
+bool CBlock::CheckBlock(int nHeight) const
 {
     // These are checks that are independent of context
     // that can be verified before saving an orphan block.
@@ -1380,7 +1422,9 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
         return error("ProcessBlock() : already have block (orphan) %s", hash.ToString().substr(0,20).c_str());
 
     // Preliminary checks
-    if (!pblock->CheckBlock())
+
+    // This will be checked again in ConnectBlock with the actual height
+    if (!pblock->CheckBlock(INT_MAX))
         return error("ProcessBlock() : CheckBlock FAILED");
 
     // If don't already have its previous block, shunt it off to holding area until we get it
@@ -2136,6 +2180,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             if (--nLimit <= 0 || pindex->GetBlockHash() == hashStop)
                 break;
         }
+
         pfrom->PushMessage("headers", vHeaders);
     }
 
@@ -2890,6 +2935,22 @@ void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& 
     pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 }
 
+// Create coinbase with auxiliary data, for multichain mining
+void IncrementExtraNonceWithAux(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& nExtraNonce, int64& nPrevTime, vector<unsigned char>& vchAux)
+{
+    // Update nExtraNonce
+    int64 nNow = max(pindexPrev->GetMedianTimePast()+1, GetAdjustedTime());
+    if (++nExtraNonce >= 0x7f && nNow > nPrevTime+1)
+    {
+        nExtraNonce = 1;
+        nPrevTime = nNow;
+    }
+
+    // Push OP_1 just in case we want versioning later
+    pblock->vtx[0].vin[0].scriptSig = CScript() << pblock->nBits << CBigNum(nExtraNonce) << OP_1 << vchAux;
+    pblock->hashMerkleRoot = pblock->BuildMerkleTree();
+}
+
 
 void FormatHashBuffers(CBlock* pblock, char* pmidstate, char* pdata, char* phash1)
 {
@@ -2942,12 +3003,33 @@ bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
     uint256 hash = pblock->GetHash();
     uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
 
-    if (hash > hashTarget)
-        return false;
+    CAuxPow *auxpow = pblock->auxpow.get();
 
-    //// debug print
-    printf("BitcoinMiner:\n");
-    printf("proof-of-work found  \n  hash: %s  \ntarget: %s\n", hash.GetHex().c_str(), hashTarget.GetHex().c_str());
+    if (auxpow != NULL)
+    {
+        if (!auxpow->Check(hash))
+            return error("AUX POW is not valid");
+
+        if (auxpow->GetParentBlockHash() > hashTarget)
+            return error("AUX POW parent hash %s is not under target %s", auxpow->GetParentBlockHash().GetHex().c_str(), hashTarget.GetHex().c_str());
+
+        //// debug print
+        printf("BitcoinMiner:\n");
+        printf("AUX proof-of-work found  \n     our hash: %s   \n  parent hash: %s  \n       target: %s\n",
+                hash.GetHex().c_str(),
+                auxpow->GetParentBlockHash().GetHex().c_str(),
+                hashTarget.GetHex().c_str());
+    }
+    else
+    {
+        if (hash > hashTarget)
+            return false;
+
+        //// debug print
+        printf("BitcoinMiner:\n");
+        printf("proof-of-work found  \n  hash: %s  \ntarget: %s\n", hash.GetHex().c_str(), hashTarget.GetHex().c_str());
+    }
+
     pblock->print();
     printf("%s ", DateTimeStrFormat("%x %H:%M", GetTime()).c_str());
     printf("generated %s\n", FormatMoney(pblock->vtx[0].vout[0].nValue).c_str());
@@ -3166,4 +3248,22 @@ void GenerateBitcoins(bool fGenerate, CWallet* pwallet)
             Sleep(10);
         }
     }
+}
+
+bool CBlockIndex::CheckIndex() const
+{
+    if (nVersion & BLOCK_VERSION_AUXPOW)
+        return CheckProofOfWork(auxpow->GetParentBlockHash(), nBits);
+    else
+        return CheckProofOfWork(GetBlockHash(), nBits);
+}
+
+std::string CBlockIndex::ToString() const
+{
+    return strprintf("CBlockIndex(nprev=%08x, pnext=%08x, nFile=%d, nBlockPos=%-6d nHeight=%d, merkle=%s, hashBlock=%s, hashParentBlock=%s)",
+            pprev, pnext, nFile, nBlockPos, nHeight,
+            hashMerkleRoot.ToString().substr(0,10).c_str(),
+            GetBlockHash().ToString().substr(0,20).c_str(),
+            (auxpow.get() != NULL) ? auxpow->GetParentBlockHash().ToString().substr(0,20).c_str() : "-"
+            );
 }

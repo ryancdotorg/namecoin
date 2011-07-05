@@ -7,6 +7,7 @@
 #include "db.h"
 #include "net.h"
 #include "init.h"
+#include "auxpow.h"
 #undef printf
 #include <boost/asio.hpp>
 #include <boost/iostreams/concepts.hpp>
@@ -1862,6 +1863,102 @@ Value getwork(const Array& params, bool fHelp)
 }
 
 
+Value getauxblock(const Array& params, bool fHelp)
+{
+    if (fHelp || (params.size() != 0 && params.size() != 2))
+        throw runtime_error(
+            "getauxblock [<hash> <auxpow>]\n"
+            " create a new block"
+            "If <hash>, <auxpow> is not specified, returns a new block hash.\n"
+            "If <hash>, <auxpow> is specified, tries to solve the block based on "
+            "the aux proof of work and returns true if it was successful.");
+
+    if (vNodes.empty())
+        throw JSONRPCError(-9, "Bitcoin is not connected!");
+
+    if (IsInitialBlockDownload())
+        throw JSONRPCError(-10, "Bitcoin is downloading blocks...");
+
+    static map<uint256, CBlock*> mapNewBlock;
+    static vector<CBlock*> vNewBlock;
+    static CReserveKey reservekey(pwalletMain);
+
+    if (params.size() == 0)
+    {
+        // Update block
+        static unsigned int nTransactionsUpdatedLast;
+        static CBlockIndex* pindexPrev;
+        static int64 nStart;
+        static CBlock* pblock;
+        if (pindexPrev != pindexBest ||
+            (nTransactionsUpdated != nTransactionsUpdatedLast && GetTime() - nStart > 60))
+        {
+            if (pindexPrev != pindexBest)
+            {
+                // Deallocate old blocks since they're obsolete now
+                mapNewBlock.clear();
+                BOOST_FOREACH(CBlock* pblock, vNewBlock)
+                    delete pblock;
+                vNewBlock.clear();
+            }
+            nTransactionsUpdatedLast = nTransactionsUpdated;
+            pindexPrev = pindexBest;
+            nStart = GetTime();
+
+            // Create new block with nonce = 0 and extraNonce = 1
+            pblock = CreateNewBlock(reservekey);
+
+            // Update nTime
+            pblock->nTime = max(pindexPrev->GetMedianTimePast()+1, GetAdjustedTime());
+            pblock->nNonce = 0;
+
+            // Push OP_2 just in case we want versioning later
+            pblock->vtx[0].vin[0].scriptSig = CScript() << pblock->nBits << CBigNum(1) << OP_2;
+            pblock->hashMerkleRoot = pblock->BuildMerkleTree();
+
+            // Sets the version
+            pblock->SetAuxPow(new CAuxPow());
+
+            // Save
+            mapNewBlock[pblock->GetHash()] = pblock;
+
+            if (!pblock)
+                throw JSONRPCError(-7, "Out of memory");
+            vNewBlock.push_back(pblock);
+        }
+
+        uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
+
+        Object result;
+        result.push_back(Pair("target",   HexStr(BEGIN(hashTarget), END(hashTarget))));
+        result.push_back(Pair("hash", pblock->GetHash().GetHex()));
+        return result;
+    }
+    else
+    {
+        uint256 hash;
+        hash.SetHex(params[0].get_str());
+        vector<unsigned char> vchAuxPow = ParseHex(params[1].get_str());
+        CDataStream ss(vchAuxPow, SER_GETHASH|SER_BLOCKHEADERONLY);
+        CAuxPow* pow = new CAuxPow();
+        ss >> *pow;
+        if (!mapNewBlock.count(hash))
+            return ::error("getauxblock() : block not found");
+
+        CBlock* pblock = mapNewBlock[hash];
+        pblock->SetAuxPow(pow);
+
+        if (!CheckWork(pblock, *pwalletMain, reservekey))
+        {
+            return false;
+        }
+        else
+        {
+            return true;
+        }
+    }
+}
+
 Value getmemorypool(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() > 1)
@@ -1956,8 +2053,6 @@ Value getmemorypool(const Array& params, bool fHelp)
 
 
 
-
-
 //
 // Call Table
 //
@@ -1990,19 +2085,21 @@ pair<string, rpcfn_type> pCallTable[] =
     make_pair("walletpassphrasechange", &walletpassphrasechange),
     make_pair("walletlock",             &walletlock),
     make_pair("encryptwallet",          &encryptwallet),
-    make_pair("validateaddress",        &validateaddress),
-    make_pair("getbalance",             &getbalance),
-    make_pair("move",                   &movecmd),
-    make_pair("sendfrom",               &sendfrom),
-    make_pair("sendmany",               &sendmany),
-    make_pair("gettransaction",         &gettransaction),
-    make_pair("listtransactions",       &listtransactions),
+    make_pair("validateaddress",       &validateaddress),
+    make_pair("getbalance",            &getbalance),
+    make_pair("move",                  &movecmd),
+    make_pair("sendfrom",              &sendfrom),
+    make_pair("sendmany",              &sendmany),
+    make_pair("gettransaction",        &gettransaction),
+    make_pair("listtransactions",      &listtransactions),
     make_pair("signmessage",           &signmessage),
     make_pair("verifymessage",         &verifymessage),
-    make_pair("getwork",                &getwork),
-    make_pair("listaccounts",           &listaccounts),
-    make_pair("settxfee",               &settxfee),
-    make_pair("getmemorypool",          &getmemorypool),
+    make_pair("getwork",               &getwork),
+    make_pair("getworkaux",            &getworkaux),
+    make_pair("getauxblock",           &getauxblock),
+    make_pair("listaccounts",          &listaccounts),
+    make_pair("settxfee",              &settxfee),
+    make_pair("getmemorypool",         &getmemorypool),
     make_pair("listsinceblock",        &listsinceblock),
 };
 map<string, rpcfn_type> mapCallTable(pCallTable, pCallTable + sizeof(pCallTable)/sizeof(pCallTable[0]));
@@ -2029,6 +2126,8 @@ string pAllowInSafeMode[] =
     "walletlock",
     "validateaddress",
     "getwork",
+    "getworkaux",
+    "getauxblock",
     "getmemorypool",
 };
 set<string> setAllowInSafeMode(pAllowInSafeMode, pAllowInSafeMode + sizeof(pAllowInSafeMode)/sizeof(pAllowInSafeMode[0]));
@@ -2449,7 +2548,7 @@ void ThreadRPCServer2(void* parg)
             if (valMethod.type() != str_type)
                 throw JSONRPCError(-32600, "Method must be a string");
             string strMethod = valMethod.get_str();
-            if (strMethod != "getwork" && strMethod != "getmemorypool")
+            if (strMethod != "getwork" && strMethod != "getworkaux" && strMethod != "getauxblock" && strMethod != "getmemorypool")
                 printf("ThreadRPCServer method=%s\n", strMethod.c_str());
 
             // Parse params
@@ -2628,6 +2727,7 @@ int CommandLineRPC(int argc, char *argv[])
         if (strMethod == "sendfrom"               && n > 3) ConvertTo<boost::int64_t>(params[3]);
         if (strMethod == "listtransactions"       && n > 1) ConvertTo<boost::int64_t>(params[1]);
         if (strMethod == "listtransactions"       && n > 2) ConvertTo<boost::int64_t>(params[2]);
+        if (strMethod == "getworkaux"             && n > 2) ConvertTo<boost::int64_t>(params[2]);
         if (strMethod == "listaccounts"           && n > 0) ConvertTo<boost::int64_t>(params[0]);
         if (strMethod == "walletpassphrase"       && n > 1) ConvertTo<boost::int64_t>(params[1]);
         if (strMethod == "listsinceblock"         && n > 1) ConvertTo<boost::int64_t>(params[1]);
