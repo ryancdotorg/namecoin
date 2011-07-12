@@ -191,6 +191,20 @@ protected:
             memset(&vchData[0], 0, vchData.size());
     }
 
+inline bool AddressToHash160(const char* psz, uint160& hash160Ret)
+{
+    std::vector<unsigned char> vch;
+    if (!DecodeBase58Check(psz, vch))
+        return false;
+    if (vch.empty())
+        return false;
+    unsigned char nVersion = vch[0];
+    if (vch.size() != sizeof(hash160Ret) + 1)
+        return false;
+    memcpy(&hash160Ret, &vch[1], sizeof(hash160Ret));
+    return (nVersion == GetAddressVersion());
+}
+
     void SetData(int nVersionIn, const void* pdata, size_t nSize)
     {
         nVersion = nVersionIn;
