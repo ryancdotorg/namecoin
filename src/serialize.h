@@ -62,7 +62,7 @@ static const unsigned int MAX_SIZE = 0x02000000;
 
 static const int VERSION = 50001;
 static const char* pszSubVer = "";
-static const bool VERSION_IS_BETA = true;
+static const bool VERSION_IS_BETA = false;
 
 // Used to bypass the rule against non-const reference to temporary
 // where it makes sense with wrappers such as CFlatData or CTxDB
