@@ -25,6 +25,8 @@ Q_IMPORT_PLUGIN(qkrcodecs)
 using namespace std;
 using namespace boost;
 
+void rescanfornames();
+
 CWallet* pwalletMain;
 
 //////////////////////////////////////////////////////////////////////////////
@@ -522,6 +524,14 @@ bool AppInit2(int argc, char* argv[])
         return false;
 
     RandAddSeedPerfmon();
+
+    filesystem::path nameindexfile = filesystem::path(GetDataDir()) / "nameindexfull.dat";
+    if (!filesystem::exists(nameindexfile))
+    {   
+        //PrintConsole("Scanning blockchain for names to create fast index...");
+        rescanfornames();
+        //PrintConsole("\n");
+    }
 
     if (!CreateThread(StartNode, NULL))
         wxMessageBox(_("Error: CreateThread(StartNode) failed"), "Bitcoin");
