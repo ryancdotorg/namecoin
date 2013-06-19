@@ -1146,7 +1146,7 @@ void ThreadMapPort2(void* parg)
     {
         char intClient[16];
         char intPort[6];
-        string strDesc = "Bitcoin " + FormatFullVersion();
+        string strDesc = "Namecoin " + FormatFullVersion();
         r = UPNP_AddPortMapping(urls.controlURL, data.first.servicetype,
 	                        port, port, lanaddr, strDesc.c_str(), "TCP", 0, "0");
 
