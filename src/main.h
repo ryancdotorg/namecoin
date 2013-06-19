@@ -10,6 +10,7 @@
 #include "key.h"
 #include "script.h"
 #include "db.h"
+#include "hook.h"
 
 #include <list>
 #include <boost/shared_ptr.hpp>
