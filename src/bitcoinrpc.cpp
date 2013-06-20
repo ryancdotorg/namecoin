@@ -1912,7 +1912,8 @@ Value getworkaux(const Array& params, bool fHelp)
     if (IsInitialBlockDownload())
         throw JSONRPCError(-10, "Bitcoin is downloading blocks...");
 
-    static map<uint256, pair<CBlock*, unsigned int> > mapNewBlock;
+    typedef map<uint256, pair<CBlock*, CScript> > mapNewBlock_t;
+    static mapNewBlock_t mapNewBlock;
     static vector<CBlock*> vNewBlock;
     static CReserveKey reservekey(pwalletMain);
 
@@ -1960,7 +1961,7 @@ Value getworkaux(const Array& params, bool fHelp)
         pblock->nNonce = 0;
 
         // Save
-        mapNewBlock[pblock->hashMerkleRoot] = make_pair(pblock, nExtraNonce);
+        mapNewBlock[pblock->hashMerkleRoot] = make_pair(pblock, pblock->vtx[0].vin[0].scriptSig);
 
         // Prebuild hash buffers
         char pmidstate[32];
@@ -1995,7 +1996,6 @@ Value getworkaux(const Array& params, bool fHelp)
         if (!mapNewBlock.count(pdata->hashMerkleRoot))
             return false;
         CBlock* pblock = mapNewBlock[pdata->hashMerkleRoot].first;
-        unsigned int nExtraNonce = mapNewBlock[pdata->hashMerkleRoot].second;
 
         pblock->nTime = pdata->nTime;
         pblock->nNonce = pdata->nNonce;
@@ -2014,7 +2014,7 @@ Value getworkaux(const Array& params, bool fHelp)
 
         RemoveMergedMiningHeader(vchAux);
 
-        pblock->vtx[0].vin[0].scriptSig = MakeCoinbaseWithAux(pblock->nBits, nExtraNonce, vchAux);
+        pblock->vtx[0].vin[0].scriptSig = mapNewBlock[pdata->hashMerkleRoot].second;
         pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 
         if (params.size() > 2)
