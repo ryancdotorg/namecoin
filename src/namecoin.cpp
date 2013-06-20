@@ -75,7 +75,7 @@ public:
             CBlockIndex* pindexBlock);
     virtual bool ConnectBlock(CBlock& block, CTxDB& txdb, CBlockIndex* pindex);
     virtual bool DisconnectBlock(CBlock& block, CTxDB& txdb, CBlockIndex* pindex);
-    virtual bool ExtractAddress(const CScript& script, string& address);
+    virtual bool ExtractAddressNamecoin(const CScript& script, string& address);
     virtual bool GenesisBlock(CBlock& block);
     virtual bool Lockin(int nHeight, uint256 hash);
     virtual int LockinHeight();
@@ -2137,7 +2137,7 @@ static string nameFromOp(int op)
     }
 }
 
-bool CNamecoinHooks::ExtractAddress(const CScript& script, string& address)
+bool CNamecoinHooks::ExtractAddressNamecoin(const CScript& script, string& address)
 {
     if (script.size() == 1 && script[0] == OP_RETURN)
     {
