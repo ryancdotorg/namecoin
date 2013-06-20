@@ -1075,7 +1075,8 @@ Value name_firstupdate(const Array& params, bool fHelp)
             throw runtime_error("previous transaction is not in the wallet");
         }
 
-        vector<unsigned char> strPubKey = pwalletMain->GetKeyFromKeyPool();
+        vector<unsigned char> strPubKey;
+        pwalletMain->GetKeyFromPool(strPubKey, false);
         CScript scriptPubKeyOrig;
         scriptPubKeyOrig.SetBitcoinAddress(strPubKey);
         CScript scriptPubKey;
@@ -1133,7 +1134,8 @@ Value name_update(const Array& params, bool fHelp)
 
     CWalletTx wtx;
     wtx.nVersion = NAMECOIN_TX_VERSION;
-    vector<unsigned char> strPubKey = pwalletMain->GetKeyFromKeyPool();
+    vector<unsigned char> strPubKey;
+    pwalletMain->GetKeyFromPool(strPubKey, false);
     CScript scriptPubKeyOrig;
 
     if (params.size() == 3)
@@ -1208,7 +1210,8 @@ Value name_new(const Array& params, bool fHelp)
     vchToHash.insert(vchToHash.end(), vchName.begin(), vchName.end());
     uint160 hash =  Hash160(vchToHash);
 
-    vector<unsigned char> strPubKey = pwalletMain->GetKeyFromKeyPool();
+    vector<unsigned char> strPubKey;
+    pwalletMain->GetKeyFromPool(strPubKey, false);
     CScript scriptPubKeyOrig;
     scriptPubKeyOrig.SetBitcoinAddress(strPubKey);
     CScript scriptPubKey;
