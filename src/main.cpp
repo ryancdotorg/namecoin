@@ -8,7 +8,6 @@
 #include "net.h"
 #include "init.h"
 #include "auxpow.h"
-#include "cryptopp/sha.h"
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 
