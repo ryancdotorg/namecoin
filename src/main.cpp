@@ -1348,7 +1348,7 @@ bool CBlock::CheckBlock(int nHeight) const
         return DoS(100, error("CheckBlock() : size limits failed"));
 
     // Check proof of work matches claimed amount
-    if (!CheckProofOfWork(GetHash(), nBits))
+    if (!CheckProofOfWork(nHeight))
         return DoS(50, error("CheckBlock() : proof of work failed"));
 
     // Check timestamp
@@ -2820,18 +2820,6 @@ public:
     }
 };
 
-void CBlock::SetNull()
-{
-    nVersion = BLOCK_VERSION_DEFAULT | (GetOurChainID() * BLOCK_VERSION_CHAIN_START);
-    hashPrevBlock = 0;
-    hashMerkleRoot = 0;
-    nTime = 0;
-    nBits = 0;
-    nNonce = 0;
-    vtx.clear();
-    vMerkleTree.clear();
-    auxpow.reset();
-}
 
 CBlock* CreateNewBlock(CReserveKey& reservekey)
 {
