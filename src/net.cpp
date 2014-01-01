@@ -1222,7 +1222,7 @@ void MapPort(bool /* unused fMapPort */)
 
 
 
-static const char *strDNSSeed[]
+static const char *strDNSSeed[];
 
 void DNSAddressSeed()
 {
