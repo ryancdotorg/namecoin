@@ -1222,7 +1222,7 @@ void MapPort(bool /* unused fMapPort */)
 
 
 
-static const char *strDNSSeed[];
+static const char *strDNSSeed[] = {};
 
 void DNSAddressSeed()
 {
@@ -1258,7 +1258,7 @@ void DNSAddressSeed()
 
 
 
-unsigned int pnSeed[];
+unsigned int pnSeed[] = {};
 
 
 void ThreadOpenConnections(void* parg)
