@@ -2968,20 +2968,32 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
     return pblock.release();
 }
 
-
-void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& nExtraNonce)
+void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& nExtraNonce, int64& nPrevTime)
 {
     // Update nExtraNonce
-    static uint256 hashPrevBlock;
-    if (hashPrevBlock != pblock->hashPrevBlock)
+    int64 nNow = max(pindexPrev->GetMedianTimePast()+1, GetAdjustedTime());
+    if (++nExtraNonce >= 0x7f && nNow > nPrevTime+1)
     {
-        nExtraNonce = 0;
-        hashPrevBlock = pblock->hashPrevBlock;
+        nExtraNonce = 1;
+        nPrevTime = nNow;
     }
-    ++nExtraNonce;
-    pblock->vtx[0].vin[0].scriptSig = CScript() << pblock->nTime << CBigNum(nExtraNonce);
+    pblock->vtx[0].vin[0].scriptSig = CScript() << pblock->nBits << CBigNum(nExtraNonce);
     pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 }
+
+//void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& nExtraNonce)
+//{
+//    // Update nExtraNonce
+//    static uint256 hashPrevBlock;
+//    if (hashPrevBlock != pblock->hashPrevBlock)
+//    {
+//        nExtraNonce = 0;
+//        hashPrevBlock = pblock->hashPrevBlock;
+//    }
+//    ++nExtraNonce;
+//    pblock->vtx[0].vin[0].scriptSig = CScript() << pblock->nTime << CBigNum(nExtraNonce);
+//    pblock->hashMerkleRoot = pblock->BuildMerkleTree();
+//}
 
 // Create coinbase with auxiliary data, for multichain mining
 void FormatHashBuffers(CBlock* pblock, char* pmidstate, char* pdata, char* phash1)
@@ -3097,6 +3109,7 @@ void static BitcoinMiner(CWallet *pwallet)
     // Each thread has its own key and counter
     CReserveKey reservekey(pwallet);
     unsigned int nExtraNonce = 0;
+    int64 nPrevTime = 0;
 
     while (fGenerateBitcoins)
     {
@@ -3123,7 +3136,7 @@ void static BitcoinMiner(CWallet *pwallet)
         auto_ptr<CBlock> pblock(CreateNewBlock(reservekey));
         if (!pblock.get())
             return;
-        IncrementExtraNonce(pblock.get(), pindexPrev, nExtraNonce);
+        IncrementExtraNonce(pblock.get(), pindexPrev, nExtraNonce, nPrevTime);
 
         printf("Running BitcoinMiner with %d transactions in block\n", pblock->vtx.size());
 
