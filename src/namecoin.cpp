@@ -346,7 +346,7 @@ bool CreateTransactionWithInputTx(const vector<pair<CScript, int64> >& vecSend, 
 
                     // Fill a vout to ourself, using same address type as the payment
                     CScript scriptChange;
-                    if (vecSend[0].first.GetBitcoinAddressHash160() != 0)
+                    if (vecSend[0].first.GetBitcoinAddress().IsValid())
                         scriptChange.SetBitcoinAddress(vchPubKey);
                     else
                         scriptChange << vchPubKey << OP_CHECKSIG;
