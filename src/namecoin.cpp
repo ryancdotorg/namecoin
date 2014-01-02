@@ -1299,8 +1299,9 @@ Value deletetransaction(const Array& params, bool fHelp)
         if (!pwalletMain->mapWallet.count(hash))
           throw runtime_error("transaction not in wallet");
 
-        if (!mapTransactions.count(hash))
-          throw runtime_error("transaction not in memory - is already in blockchain?");
+//        if (!mapTransactions.count(hash))
+//          throw runtime_error("transaction not in memory - is already in blockchain?");
+
         CWalletTx wtx = pwalletMain->mapWallet[hash];
         UnspendInputs(wtx);
 
