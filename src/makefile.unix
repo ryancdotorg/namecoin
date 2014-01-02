@@ -85,6 +85,7 @@ DEBUGFLAGS=-g
 CXXFLAGS=-O2
 xCXXFLAGS=-pthread -Wno-invalid-offsetof -Wformat $(DEBUGFLAGS) $(DEFS) $(HARDENING) $(CXXFLAGS)
 HEADERS = \
+    auxpow.h \
     base58.h \
     bignum.h \
     crypter.h \
@@ -107,6 +108,7 @@ HEADERS = \
     wallet.h
 
 BASE_OBJS= \
+    obj/auxpow.o \
     obj/crypter.o \
     obj/db.o \
     obj/init.o \
