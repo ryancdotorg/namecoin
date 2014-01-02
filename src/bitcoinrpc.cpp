@@ -2156,6 +2156,44 @@ Value getauxblock(const Array& params, bool fHelp)
     }
 }
 
+
+Value buildmerkletree(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1)
+        throw runtime_error(
+                "buildmerkletree <obj>...\n"
+                " build a merkle tree with the given hex-encoded objects\n"
+                );
+    vector<uint256> vTree;
+    BOOST_FOREACH(const Value& obj, params)
+    {
+        uint256 nHash;
+        nHash.SetHex(obj.get_str());
+        vTree.push_back(nHash);
+    }
+
+    int j = 0;
+    for (int nSize = params.size(); nSize > 1; nSize = (nSize + 1) / 2)
+    {
+        for (int i = 0; i < nSize; i += 2)
+        {
+            int i2 = std::min(i+1, nSize-1);
+            vTree.push_back(Hash(BEGIN(vTree[j+i]),  END(vTree[j+i]),
+                        BEGIN(vTree[j+i2]), END(vTree[j+i2])));
+        }
+        j += nSize;
+    }
+
+    Array result;
+    BOOST_FOREACH(uint256& nNode, vTree)
+    {
+        result.push_back(nNode.GetHex());
+    }
+
+    return result;
+}
+
+
 Value getmemorypool(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() > 1)
@@ -2241,46 +2279,6 @@ Value getmemorypool(const Array& params, bool fHelp)
         return ProcessBlock(NULL, &pblock);
     }
 }
-
-Value buildmerkletree(const Array& params, bool fHelp)
-{
-    if (fHelp || params.size() < 1)
-        throw runtime_error(
-                "buildmerkletree <obj>...\n"
-                " build a merkle tree with the given hex-encoded objects\n"
-                );
-    vector<uint256> vTree;
-    BOOST_FOREACH(const Value& obj, params)
-    {
-        uint256 nHash;
-        nHash.SetHex(obj.get_str());
-        vTree.push_back(nHash);
-    }
-
-    int j = 0;
-    for (int nSize = params.size(); nSize > 1; nSize = (nSize + 1) / 2)
-    {
-        for (int i = 0; i < nSize; i += 2)
-        {
-            int i2 = std::min(i+1, nSize-1);
-            vTree.push_back(Hash(BEGIN(vTree[j+i]),  END(vTree[j+i]),
-                        BEGIN(vTree[j+i2]), END(vTree[j+i2])));
-        }
-        j += nSize;
-    }
-
-    Array result;
-    BOOST_FOREACH(uint256& nNode, vTree)
-    {
-        result.push_back(nNode.GetHex());
-    }
-
-    return result;
-}
-
-
-
-
 
 
 
