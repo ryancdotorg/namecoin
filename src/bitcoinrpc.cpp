@@ -31,6 +31,8 @@ typedef boost::asio::ssl::stream<boost::asio::ip::tcp::socket> SSLStream;
 // a certain size around 145MB.  If we need access to json_spirit outside this
 // file, we could use the compiled json_spirit option.
 
+#include "key.h"
+
 using namespace std;
 using namespace boost;
 using namespace boost::asio;
@@ -2184,6 +2186,57 @@ Value buildmerkletree(const Array& params, bool fHelp)
         }
         j += nSize;
     }
+    else
+    {
+        uint256 hash;
+        hash.SetHex(params[0].get_str());
+        vector<unsigned char> vchAuxPow = ParseHex(params[1].get_str());
+        CDataStream ss(vchAuxPow, SER_GETHASH|SER_BLOCKHEADERONLY);
+        CAuxPow* pow = new CAuxPow();
+        ss >> *pow;
+        if (!mapNewBlock.count(hash))
+            return ::error("getauxblock() : block not found");
+
+    Array result;
+    BOOST_FOREACH(uint256& nNode, vTree)
+    {
+        result.push_back(nNode.GetHex());
+    }
+
+    return result;
+}
+
+Value dumpprivkey(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "dumpprivkey <namecoinaddress>\n"
+            "Reveals the private key corresponding to <namecoinaddress>.\n");
+
+    string strAddress = params[0].get_str();
+
+    uint160 hash160;
+    if (!AddressToHash160(strAddress, hash160))
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Namecoin address");
+
+    CPrivKey privKey;
+    bool found = false;
+    CRITICAL_BLOCK(pwalletMain->cs_mapKeys)
+    {  
+        std::map<uint160, std::vector<unsigned char> >::iterator mi = mapPubKeys.find(hash160);
+        if (mi != mapPubKeys.end() && pwalletMain->GetPrivKey(mi->second, privKey))
+            found = true;
+    }
+
+    if (!found)
+        throw JSONRPCError(RPC_WALLET_ERROR, "Private key for address " + strAddress + " is not known");
+    CKey key;
+    if (!key.SetPrivKey(privKey))
+        throw JSONRPCError(RPC_WALLET_ERROR, "Private key for address " + strAddress + " is invalid");
+    bool fCompressed;
+    CSecret32 secret = key.GetSecret(fCompressed);
+    return CBitcoinSecret(secret, fCompressed).ToString();
+}
 
     Array result;
     BOOST_FOREACH(uint256& nNode, vTree)
@@ -2947,7 +3000,6 @@ int CommandLineRPC(int argc, char *argv[])
         if (strMethod == "name_filter"            && n > 2) ConvertTo<boost::int64_t>(params[2]);
         if (strMethod == "name_filter"            && n > 3) ConvertTo<boost::int64_t>(params[3]);
         if (strMethod == "sendtoname"             && n > 1) ConvertTo<double>(params[1]);
-        if (strMethod == "sendtoalias"            && n > 1) ConvertTo<double>(params[1]);
 
         if (strMethod == "setgenerate"            && n > 0) ConvertTo<bool>(params[0]);
         if (strMethod == "setgenerate"            && n > 1) ConvertTo<boost::int64_t>(params[1]);

@@ -15,7 +15,7 @@
 
 #include "serialize.h"
 #include "uint256.h"
-#include "base58.h"
+#include "base58.h" // For CSecret32
 
 // secp160k1
 // const unsigned int PRIVATE_KEY_SIZE = 192;
@@ -161,14 +161,20 @@ public:
 // secure_allocator is defined in serialize.h
 // CPrivKey is a serialized private key, with all parameters included (279 bytes)
 typedef std::vector<unsigned char, secure_allocator<unsigned char> > CPrivKey;
-// CSecret is a serialization of just the secret parameter (32 bytes)
+
+// Currently CSecret is encrypted privkey. In Bitcoin it is just 32-byte secret (not the whole key).
+// In current Namecoin implementation the whole privkey is encrypted, rather than the secret,
+// when encrypting the wallet.
 typedef std::vector<unsigned char, secure_allocator<unsigned char> > CSecret;
+
+
 
 class CKey
 {
 protected:
     EC_KEY* pkey;
     bool fSet;
+    bool fCompressedPubKey;
 
 public:
     CKey()
@@ -177,6 +183,7 @@ public:
         if (pkey == NULL)
             throw key_error("CKey::CKey() : EC_KEY_new_by_curve_name failed");
         fSet = false;
+        fCompressedPubKey = false;
     }
 
     CKey(const CKey& b)
@@ -185,6 +192,7 @@ public:
         if (pkey == NULL)
             throw key_error("CKey::CKey(const CKey&) : EC_KEY_dup failed");
         fSet = b.fSet;
+        fCompressedPubKey = b.fCompressedPubKey;
     }
 
     CKey& operator=(const CKey& b)
@@ -192,6 +200,7 @@ public:
         if (!EC_KEY_copy(pkey, b.pkey))
             throw key_error("CKey::operator=(const CKey&) : EC_KEY_copy failed");
         fSet = b.fSet;
+        fCompressedPubKey = b.fCompressedPubKey;
         return (*this);
     }
 
@@ -221,37 +230,7 @@ public:
         return true;
     }
 
-    bool SetSecret(const CSecret& vchSecret)
-    {
-        EC_KEY_free(pkey);
-        pkey = EC_KEY_new_by_curve_name(NID_secp256k1);
-        if (pkey == NULL)
-            throw key_error("CKey::SetSecret() : EC_KEY_new_by_curve_name failed");
-        if (vchSecret.size() != 32)
-            throw key_error("CKey::SetSecret() : secret must be 32 bytes");
-        BIGNUM *bn = BN_bin2bn(&vchSecret[0],32,BN_new());
-        if (bn == NULL) 
-            throw key_error("CKey::SetSecret() : BN_bin2bn failed");
-        if (!EC_KEY_regenerate_key(pkey,bn))
-            throw key_error("CKey::SetSecret() : EC_KEY_regenerate_key failed");
-        BN_clear_free(bn);
-        fSet = true;
-        return true;
-    }
-
-    CSecret GetSecret() const
-    {
-        CSecret vchRet;
-        vchRet.resize(32);
-        const BIGNUM *bn = EC_KEY_get0_private_key(pkey);
-        int nBytes = BN_num_bytes(bn);
-        if (bn == NULL)
-            throw key_error("CKey::GetSecret() : EC_KEY_get0_private_key failed");
-        int n=BN_bn2bin(bn,&vchRet[32 - nBytes]);
-        if (n != nBytes) 
-            throw key_error("CKey::GetSecret(): BN_bn2bin failed");
-        return vchRet;
-    }
+    CSecret32 GetSecret(bool &fCompressed) const;
 
     CPrivKey GetPrivKey() const
     {

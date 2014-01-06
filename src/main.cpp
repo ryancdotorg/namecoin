@@ -249,8 +249,6 @@ bool CTransaction::ReadFromDisk(COutPoint prevout)
     return ReadFromDisk(txdb, prevout, txindex);
 }
 
-
-
 int CMerkleTx::SetMerkleBranch(const CBlock* pblock)
 {
     if (fClient)
@@ -1286,15 +1284,12 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
 
 int GetAuxPowStartBlock()
 {
-    if (fTestNet)
-        return 0; // Always on testnet
-    else
-        return INT_MAX; // Never on prodnet
+    return hooks->GetAuxPowStartBlock();
 }
 
 int GetOurChainID()
 {
-    return 0x0000;
+    return hooks->GetOurChainID();
 }
 
 bool CBlock::CheckProofOfWork(int nHeight) const
@@ -1408,19 +1403,6 @@ bool CBlock::AcceptBlock()
     /* TODO: Namecoin checkpoints are different from bitcoin, update this
 
     // Check that the block chain matches the known block chain up to a checkpoint
-    if (!fTestNet)
-        if ((nHeight ==  11111 && hash != uint256("0x0000000069e244f73d78e8fd29ba2fd2ed618bd6fa2ee92559f542fdb26e7c1d")) ||
-            (nHeight ==  33333 && hash != uint256("0x000000002dd5588a74784eaa7ab0507a18ad16a236e7b1ce69f00d7ddfb5d0a6")) ||
-            (nHeight ==  68555 && hash != uint256("0x00000000001e1b4903550a0b96e9a9405c8a95f387162e4944e8d9fbe501cd6a")) ||
-            (nHeight ==  70567 && hash != uint256("0x00000000006a49b14bcf27462068f1264c961f11fa2e0eddd2be0791e1d4124a")) ||
-            (nHeight ==  74000 && hash != uint256("0x0000000000573993a3c9e41ce34471c079dcf5f52a0e824a81e7f953b8661a20")) ||
-            (nHeight == 105000 && hash != uint256("0x00000000000291ce28027faea320c8d2b054b2e0fe44a773f3eefb151d6bdc97")) ||
-            (nHeight == 118000 && hash != uint256("0x000000000000774a7f8a7a12dc906ddb9e17e75d684f15e00f8767f9e8f36553")) ||
-            (nHeight == 134444 && hash != uint256("0x00000000000005b12ffd4cd315cd34ffd4a594f430ac814c91184a0d42d2b0fe")) ||
-            (nHeight == 140700 && hash != uint256("0x000000000000033b512028abb90e1626d8b346fd0ed598ac0a3c371138dce2bd")))
-            return DoS(100, error("AcceptBlock() : rejected by checkpoint lockin at %d", nHeight));
-    */
-
     if (!hooks->Lockin(nHeight, hash))
         return error("AcceptBlock() : rejected by checkpoint lockin at %d", nHeight);
 
@@ -1506,6 +1488,47 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
 
 
 
+
+template<typename Stream>
+bool static ScanMessageStart(Stream& s)
+{
+    // Scan ahead to the next pchMessageStart, which should normally be immediately
+    // at the file pointer.  Leaves file pointer at end of pchMessageStart.
+    s.clear(0);
+    short prevmask = s.exceptions(0);
+    const char* p = BEGIN(pchMessageStart);
+    try
+    {
+        loop
+        {
+            char c;
+            s.read(&c, 1);
+            if (s.fail())
+            {
+                s.clear(0);
+                s.exceptions(prevmask);
+                return false;
+            }
+            if (*p != c)
+                p = BEGIN(pchMessageStart);
+            if (*p == c)
+            {
+                if (++p == END(pchMessageStart))
+                {
+                    s.clear(0);
+                    s.exceptions(prevmask);
+                    return true;
+                }
+            }
+        }
+    }
+    catch (...)
+    {
+        s.clear(0);
+        s.exceptions(prevmask);
+        return false;
+    }
+}
 
 bool CheckDiskSpace(uint64 nAdditionalBytes)
 {
@@ -2820,6 +2843,18 @@ public:
     }
 };
 
+void CBlock::SetNull()
+{
+    nVersion = BLOCK_VERSION_DEFAULT | (GetOurChainID() * BLOCK_VERSION_CHAIN_START);
+    hashPrevBlock = 0;
+    hashMerkleRoot = 0;
+    nTime = 0;
+    nBits = 0;
+    nNonce = 0;
+    vtx.clear();
+    vMerkleTree.clear();
+    auxpow.reset();
+}
 
 CBlock* CreateNewBlock(CReserveKey& reservekey)
 {
@@ -2980,20 +3015,6 @@ void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& 
     pblock->vtx[0].vin[0].scriptSig = CScript() << pblock->nBits << CBigNum(nExtraNonce);
     pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 }
-
-//void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& nExtraNonce)
-//{
-//    // Update nExtraNonce
-//    static uint256 hashPrevBlock;
-//    if (hashPrevBlock != pblock->hashPrevBlock)
-//    {
-//        nExtraNonce = 0;
-//        hashPrevBlock = pblock->hashPrevBlock;
-//    }
-//    ++nExtraNonce;
-//    pblock->vtx[0].vin[0].scriptSig = CScript() << pblock->nTime << CBigNum(nExtraNonce);
-//    pblock->hashMerkleRoot = pblock->BuildMerkleTree();
-//}
 
 // Create coinbase with auxiliary data, for multichain mining
 void FormatHashBuffers(CBlock* pblock, char* pmidstate, char* pdata, char* phash1)

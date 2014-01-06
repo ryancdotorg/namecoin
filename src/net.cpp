@@ -1222,7 +1222,7 @@ void MapPort(bool /* unused fMapPort */)
 
 
 
-static const char *strDNSSeed[] = {};
+extern const char *strDNSSeed[];
 
 void DNSAddressSeed()
 {
@@ -1234,7 +1234,7 @@ void DNSAddressSeed()
         CAddrDB addrDB;
         addrDB.TxnBegin();
 
-        for (int seed_idx = 0; seed_idx < ARRAYLEN(strDNSSeed); seed_idx++) {
+        for (int seed_idx = 0; strDNSSeed[seed_idx] ; seed_idx++) {
             vector<CAddress> vaddr;
             if (Lookup(strDNSSeed[seed_idx], vaddr, NODE_NETWORK, -1, true))
             {
@@ -1258,7 +1258,7 @@ void DNSAddressSeed()
 
 
 
-unsigned int pnSeed[] = {};
+extern unsigned int pnSeed[];
 
 
 void ThreadOpenConnections(void* parg)
@@ -1363,6 +1363,7 @@ void ThreadOpenConnections2(void* parg)
                     addr.ip = pnSeed[i];
                     addr.nTime = GetTime()-GetRand(nOneWeek)-nOneWeek;
                     AddAddress(addr);
+                    nSeeds++;
                 }
             }
         }
